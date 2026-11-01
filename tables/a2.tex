@@ -1,0 +1,16 @@
+\begin{tabular}{lrrc}
+\toprule
+Error structure & Prediction of $E[L^D-L^S]$ & Simulation & verified \\
+\midrule
+correlation $\rho=-1$ & 0.5000 & 0.5001$\pm$0.0014 & yes \\
+correlation $\rho=-0.5$ & 0.3750 & 0.3747$\pm$0.0010 & yes \\
+correlation $\rho=0$ & 0.2500 & 0.2500$\pm$0.0007 & yes \\
+correlation $\rho=0.5$ & 0.1250 & 0.1249$\pm$0.0003 & yes \\
+correlation $\rho=1$ & 0.0000 & 0.0000$\pm$0.0000 & yes \\
+Student-$t_3$ errors & 0.2500 & 0.2388$\pm$0.0094 & no \\
+bias $(+0.5,+0.5)$ & 0.2500 & 0.2498$\pm$0.0007 & yes \\
+bias $(+1.0,+1.0)$ & 0.2500 & 0.2497$\pm$0.0007 & yes \\
+bias $(+0.5,-0.5)$ & 0.3750 & 0.3742$\pm$0.0010 & yes \\
+bias $(+1.0,-1.0)$ & 0.7500 & 0.7496$\pm$0.0015 & yes \\
+\bottomrule
+\end{tabular}

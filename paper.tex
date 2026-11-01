@@ -1,0 +1,471 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1.05in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs,graphicx,enumitem,xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\setlist{nosep,leftmargin=1.6em}
+\setlength{\parskip}{3pt}
+\renewcommand{\arraystretch}{1.08}
+\setlength{\tabcolsep}{3.5pt}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\ind}{\mathbb{1}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\input{tables/macros}
+\usepackage{environ}
+\NewEnviron{expsec}{\global\let\expbody\BODY}
+
+\title{Estimation Robustness of Static Congestion Pricing under Learned Demand}
+\author{Shereen Anand\thanks{The author is currently affiliated with Microsoft Research. This research was conducted independently of her work at Microsoft Research.}\\Independent Researcher\\\texttt{pes1202201328@pesu.pes.edu}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Congestion-pricing deployments often use simple, mostly static tolls. Recent work shows that with known demand, the revenue loss from doing so is bounded in canonical traffic models, but these guarantees assume the planner knows demand. In practice, demand is estimated from traffic that the toll itself shapes. We study whether simple tolls retain their guarantees under learned demand in a two-period congestion model with linear demand response and several extensions. The objective loss of any plug-in tolling policy is an \emph{exact} quadratic form in toll error (Lemma~\ref{lem:quad}), yielding the following results. (i) With known demand, the two-period price of simplicity is tight at $(1+\sqrt2)/(2\sqrt2)\approx0.854$, attained at demand ratio $1+\sqrt2$; with $H$ periods no constant guarantee holds, since the worst-case ratio decays like $4/H_H$ (Theorems~\ref{thm:known} and~\ref{thm:generalH}). (ii) Estimation error increases the dynamic plug-in's loss relative to its dynamic oracle by at least as much as it increases the static plug-in's loss relative to its static oracle. The dynamic plug-in outperforms the static plug-in exactly when the true toll differential exceeds the root-mean-square error of the estimated differential (Corollary~\ref{cor:cross}); the loss ordering extends to periods coupled by cross-period substitution (Theorem~\ref{thm:coupled}). (iii) This simplicity advantage applies to \emph{unshrunk} plug-in estimators: certainty equivalence is Bayes-optimal in the interior regime, so a Bayesian dynamic planner weakly dominates a Bayesian static planner (Theorem~\ref{thm:bayes}), and a one-parameter shrinkage family interpolates between them with closed-form risk (Theorem~\ref{thm:shrink}). (iv) The static-optimal toll is identifiable from aggregate flows under one fixed toll, while the dynamic-optimal toll is not identifiable under any interior toll sequence (Propositions~\ref{prop:ident-static}--\ref{prop:ident-split}). (v) Under random-walk demand, batched re-estimation has an interior optimal review period; a continuously updated Kalman filter strictly dominates every batched schedule even with revision costs, and a one-time estimate never recovers from a demand shift (Theorems~\ref{thm:review} and~\ref{thm:kalman}). We verify closed forms with seeded CPU simulations and report discrepancies.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+Congestion-pricing systems often use simple, mostly static tolls, while few deploy optimal time-varying prices. Jalota, Di and Elmachtoub~\cite{jde2026} recently quantified what simplicity costs when demand is known. In Vickrey's bottleneck model with a public-transit outside option and in a city-scale Macroscopic Fundamental Diagram (MFD) model, they show that revenue-optimal static tolls achieve a constant fraction of the optimal dynamic revenue (at least two thirds across many practically relevant regimes in the current arXiv version) and at most twice the minimum achievable system cost.
+
+The guarantee has a quiet premise: the planner knows demand. A real planner does not. Demand must be estimated from observed traffic, and the toll in place changes the traffic that is observed: drivers priced off the road leave no trace in the counts. Learning and pricing are therefore coupled, and it is not obvious that a rule which is near-optimal under perfect information remains so when its inputs are estimated. It is equally unclear whether more adaptive pricing helps, since an adaptive rule must estimate \emph{more}, from data its own past decisions have distorted.
+
+This paper studies the price of simplicity under learned demand in the smallest model in which the question is well posed: $H$ periods per day (mostly $H=2$, peak and off-peak), linear demand response, a linear congestion externality, and a planner who observes noisy flows. The model is deliberately reduced-form. It isolates the statistical structure of the problem while sacrificing the departure-time richness of the bottleneck model. Within it every quantity of interest is computable in closed form, and the answers are sharper than one might expect.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+\item \textbf{Known demand (Section~\ref{sec:known}).} The revenue ratio between the optimal static and optimal dynamic toll for two periods is at least $(1+\sqrt2)/(2\sqrt2)\approx0.854$, with equality at demand ratio $1+\sqrt2$ (Theorem~\ref{thm:known}). With $H$ periods the ratio is bounded below by $4mM/(m+M)^2$ in terms of the extreme period demands, and this dependence is unavoidable: on a power-law profile it decays like $4/H_H$ (Theorem~\ref{thm:generalH}).
+\item \textbf{Estimated demand (Section~\ref{sec:est}).} Estimation error is not neutral between policy classes. The plug-in dynamic toll loses exactly $\lambda\sum_i(u_i-\bar u)^2$ more than the plug-in static toll, in toll-error units, for either the revenue or the welfare objective (Theorem~\ref{thm:est}). The statement survives, verbatim in a suitable metric, when periods are coupled by cross-period substitution (Theorem~\ref{thm:coupled}), a reduced model of schedule shifting that was left as a conjecture in an earlier version of this work.
+\item \textbf{Beyond plug-in (Section~\ref{sec:bayes}).} Certainty equivalence is Bayes-optimal under quadratic loss (Theorem~\ref{thm:bayes}). Shrinkage interpolates between static and dynamic tolls with a closed-form optimal weight, while James--Stein shrinkage dominates the dynamic plug-in for $H\ge4$ (Theorem~\ref{thm:shrink}).
+\item \textbf{Identifiability (Section~\ref{sec:ident}).} The static-optimal toll is identified from aggregate counts under a single fixed toll; the split of demand across periods, hence the dynamic-optimal toll, is not identified from aggregate counts under any toll sequence that keeps all periods active. Corner probes reveal it at an explicit revenue cost.
+\item \textbf{Learning dynamics (Section~\ref{sec:dyn}).} Under random-walk demand there is an interior optimal review period in the class of batched cycle-mean policies (Theorem~\ref{thm:review}); daily batching is optimal exactly when $\sigma^2/\nu^2\le3/2$. A Kalman filter beats the whole batched class, \emph{also} when revisions are costly (Theorem~\ref{thm:kalman}); the matched-gain EWMA is exactly the steady-state Kalman filter. Deterministic drift obeys a cube-root law (Proposition~\ref{prop:drift}) and a one-time estimate never recovers from a demand shift (Proposition~\ref{prop:recovery}).
+\item \textbf{Simulation evidence (Appendix~\ref{sec:exp}).} We pair every closed form with a simulation and test ablations on error structure, demand dynamics, change-point detection, unknown slope, boundary effects, period count and heteroskedasticity. We report deviations when the interior approximation fails.
+\end{enumerate}
+For clarity, Theorem~\ref{thm:est} compares the static plug-in toll with the static oracle and the dynamic plug-in toll with the dynamic oracle; part~(d) gives the cross-class comparison between the two plug-in policies.
+
+\paragraph{Scope.} Everything proved is elementary and proved in full (Appendix~\ref{app:proofs}). The extensions to Vickrey's bottleneck model and to the MFD model are stated as open conjectures and are \emph{not} claimed.
+
+\section{Model}\label{sec:model}
+\subsection{Setup}
+Time is indexed by days $t=1,2,\dots$; each day has $H$ periods $i\in\{1,\dots,H\}$ ($H=2$ unless stated). In period $i$ of day $t$ there is a potential demand $a_{i,t}>0$: the mass of users who would consider the road. Users' values are distributed so that demand at generalized price $p$ is linear,
+$x_i=a_{i,t}-bp$ whenever $0\le x_i\le a_{i,t}$, with price sensitivity $b>0$; equivalently the inverse value function is $v_i(x)=(a_{i,t}-x)/b$. Using the road in period $i$ imposes a congestion cost $cx_i$ on each of its $x_i$ users ($c>0$), so the generalized price under toll $\tau_i$ is $p_i=\tau_i+cx_i$. Solving the fixed point $x_i=a_{i,t}-b(\tau_i+cx_i)$ gives, in the interior,
+\begin{equation}\label{eq:usage}
+x_i(\tau_i)=\frac{a_{i,t}-b\tau_i}{1+bc}=\alpha_{i,t}-\beta\tau_i,\qquad \alpha_{i,t}:=\frac{a_{i,t}}{1+bc},\quad\beta:=\frac{b}{1+bc}.
+\end{equation}
+Here $\alpha_{i,t}$ is usage at zero toll and $\beta$ is the toll sensitivity of usage. We work in $(\alpha,\beta)$ coordinates for revenue and in $(a,b,c)$ coordinates for welfare. Outside the interior regime usage is clipped, $x_i=\max(\alpha_i-\beta\tau_i,0)$.
+
+\subsection{Objectives and toll classes}
+The planner's objective is either toll revenue $R(\tau)=\sum_i\tau_ix_i(\tau_i)$ or social welfare $W(\tau)=\sum_i\big[\int_0^{x_i}v_i(z)\,dz-cx_i^2\big]$ (tolls are transfers and cancel). Both are concave quadratics in $\tau$ in the interior regime.
+
+\begin{definition}[Toll classes]\label{def:classes}
+A \emph{dynamic} policy chooses $(\tau_1,\dots,\tau_H)$ freely. A \emph{static} policy is restricted to $\tau_1=\dots=\tau_H$. Across days, an \emph{estimate-once} policy forms one demand estimate and fixes its toll; an \emph{$m$-scheduled} policy re-estimates every $m$ days and holds the toll between reviews; a \emph{continuous} policy re-estimates daily ($m=1$). Within a class the planner uses \emph{plug-in} (certainty-equivalent) tolls: the toll that would be optimal if the current estimate were exact.
+\end{definition}
+
+\begin{definition}[Observation models]\label{def:obs}
+After tolls are set on day $t$ the planner observes flows with independent mean-zero noise of variance $\sigma^2$. (O1) \emph{Aggregate flow}: only $Y_t=\sum_ix_{i,t}+\xi_t$ is observed (e.g.\ counts at a bottleneck exit). (O2) \emph{Per-period flows}: $Y_{i,t}=x_{i,t}+\xi_{i,t}$ for each period. The planner knows $b$ and $c$ (hence $\beta$) and not the demand levels; Proposition~\ref{prop:slope} relaxes known $\beta$.
+\end{definition}
+
+\begin{assumption}[Interior regime]\label{ass:interior}
+At all tolls considered usage is interior, $0<x_i<a_i$. For known-demand results this requires a demand ratio below $3$ (Section~\ref{sec:known}); for estimation results it requires errors small relative to demand. Corner behaviour is analysed where it changes conclusions (Theorems~\ref{thm:known}, \ref{thm:generalH}) and is otherwise quantified in the ablations of Section~\ref{sec:exp}.
+\end{assumption}
+
+\subsection{What the model is and is not}
+The model is a reduced form of the bottleneck-with-transit framework of~\cite{jde2026}: the congestion externality $cx_i$ stands in for queueing delay, the linear value distribution stands in for the transit outside option and scheduling preferences, and the periods stand in for the within-day time profile. It captures the revenue and welfare geometry of the pricing problem and the statistical coupling between tolls and observations. It does not capture departure-time substitution except through the reduced cross-period coupling of Section~\ref{sec:coupled}. Section~\ref{sec:open} states what we conjecture carries over.
+
+\section{The price of simplicity with known demand}\label{sec:known}
+All proofs are in Appendix~\ref{app:proofs}.
+
+\begin{lemma}[Exact quadratic losses]\label{lem:quad}
+In the interior regime:\\
+(a) \emph{Revenue.} The optimal dynamic tolls are $\tau^D_i(\alpha)=\alpha_i/(2\beta)$ and the loss from any toll vector $\tau$ is exactly
+\[R^D(\alpha)-R(\tau;\alpha)=\beta\sum_{i}\Big(\tau_i-\frac{\alpha_i}{2\beta}\Big)^2.\]
+(b) \emph{Welfare.} The optimal dynamic tolls are the Pigouvian tolls $\tau^W_i(a)=a_ic/(1+2bc)$ and
+\[W^D(a)-W(\tau;a)=\lambda\sum_i\Big(\tau_i-\frac{a_ic}{1+2bc}\Big)^2,\qquad \lambda:=\frac{b(1+2bc)}{2(1+bc)^2}.\]
+\end{lemma}
+Lemma~\ref{lem:quad} is the engine of the paper: because the loss is an exact squared distance to the optimal toll, every question about policy classes becomes a question about projections onto the static subspace $\{\tau_1=\dots=\tau_H\}$, and every question about estimation becomes a question about squared errors.
+
+\begin{theorem}[Price of simplicity, known demand, $H=2$]\label{thm:known}
+Let $r:=\max_i\alpha_i/\min_i\alpha_i\ge1$. The revenue ratio of the optimal static to the optimal dynamic toll is
+\[\rho(\alpha)=\frac{R^S(\alpha)}{R^D(\alpha)}=\begin{cases}\dfrac{(\alpha_1+\alpha_2)^2}{2(\alpha_1^2+\alpha_2^2)},&1\le r\le1+\sqrt2,\\[8pt]\dfrac{r^2}{1+r^2},&r\ge1+\sqrt2,\end{cases}\]
+which satisfies $\rho(\alpha)\ge\frac{1+\sqrt2}{2\sqrt2}=\frac12+\frac1{2\sqrt2}\approx0.8536$, with equality exactly at $r=1+\sqrt2$. Moreover $\rho=1$ iff $\alpha_1=\alpha_2$, and $\rho\to1$ as $r\to\infty$.
+\end{theorem}
+
+\begin{remark}\label{rem:corner}
+The worst case is not extreme asymmetry: beyond $r=1+\sqrt2\approx2.41$ the optimal static toll prices out the small period entirely, and since the dynamic optimum collects relatively little there, the ratio recovers. The interior formula alone would suggest a worst case of $1/2$; accounting for the non-negativity of usage lifts the true worst case to $0.8536$. This sits comfortably above the two-thirds guarantee that~\cite{jde2026} prove for their models. The two models differ, and nothing here bears on the worst-case constant in the bottleneck model.
+\end{remark}
+
+\subsection{More than two periods}
+With $H$ periods the interior-regime ratio is $(\sum_i\alpha_i)^2/(H\sum_i\alpha_i^2)$, and the corner analysis of Theorem~\ref{thm:known} does not generalise in closed form. The following result gives a clean lower bound that holds without any interior assumption, and shows that it cannot be improved to a constant.
+
+\begin{theorem}[General $H$: bounded heterogeneity is necessary and sufficient]\label{thm:generalH}
+Let $\alpha\in\R^H_{>0}$ with $m=\min_i\alpha_i$ and $M=\max_i\alpha_i$.\\
+(a) For every $\alpha$ (with or without binding corners),
+\[\rho(\alpha)\ \ge\ \frac{(\sum_i\alpha_i)^2}{H\sum_i\alpha_i^2}\ \ge\ \frac{4mM}{(m+M)^2}.\]
+(b) For the power-law profile $\alpha^{(H)}_i=\sqrt{H/i}$, $i=1,\dots,H$,
+\[\rho\big(\alpha^{(H)}\big)\ \le\ \frac{4}{H_H},\qquad H_H=\sum_{i=1}^H\frac1i,\]
+so that $\inf_{H,\alpha}\rho(\alpha)=0$: no constant guarantee holds in this reduced model for arbitrary profiles as $H$ grows (the bound is informative once $H_H>4$).
+\end{theorem}
+Part (a) is the interior Kantorovich-type bound; we do not claim it is tight once corners bind. For $H=2$ it is dominated by Theorem~\ref{thm:known}. Part (b) says constant-factor guarantees such as those of~\cite{jde2026} cannot be a property of the reduced linear model alone: they rely on structure of the bottleneck and MFD models that bounds how heterogeneous the effective period demands can be.
+
+\section{Estimated demand: simplicity is robustness}\label{sec:est}
+With demand unknown, the planner forms estimates $\hat\theta=\theta+\varepsilon$ and sets plug-in tolls. Write $u_i:=\tau^*_i(\hat\theta)-\tau^*_i(\theta)$ for the resulting error in toll units (for revenue $u_i=\varepsilon_i/(2\beta)$ where $\varepsilon_i$ is the error in $\hat\alpha_i$; for welfare $u_i=c\varepsilon_i/(1+2bc)$ where $\varepsilon_i$ is the error in $\hat a_i$).
+
+\begin{theorem}[Estimation error hurts flexible tolls more]\label{thm:est}
+Consider any objective satisfying Lemma~\ref{lem:quad} with curvature $\lambda>0$ and optimal-toll map affine in the demand parameters, over $H$ periods, in the interior regime. Let $G:=\lambda\sum_i(\tau^*_i(\theta)-\bar\tau^*(\theta))^2$ be the known-demand gap between the optimal dynamic and optimal static toll, and $u\in\R^H$ the toll error of a plug-in estimator. Then:
+\begin{enumerate}[label=(\alph*)]
+\item $L^D(\varepsilon):=\mathrm{Obj}^D(\theta)-\mathrm{Obj}(\tau^*(\hat\theta);\theta)=\lambda\|u\|^2$;
+\item $L^S(\varepsilon):=\mathrm{Obj}^S(\theta)-\mathrm{Obj}(\bar\tau^*(\hat\theta)\one;\theta)=\lambda H\bar u^2$, the excess over the static oracle, where $\bar u=\frac1H\sum_iu_i$;
+\item hence $L^D-L^S=\lambda\sum_i(u_i-\bar u)^2\ge0$, with equality iff all $u_i$ are equal;
+\item the realized advantage of the dynamic plug-in over the static plug-in is $G-\lambda\sum_i(u_i-\bar u)^2$.
+\end{enumerate}
+\end{theorem}
+Each policy's loss is measured against its own class's oracle; the cross-class comparison is (d). The static plug-in pays only for the error in the average optimal toll, the dynamic plug-in pays for the whole error vector.
+
+\begin{corollary}[Revenue specialization]\label{cor:rev}
+For the revenue objective with $H=2$ and errors $\varepsilon_i$ in $\hat\alpha_i$: $L^S=(\varepsilon_1+\varepsilon_2)^2/(8\beta)$, $L^D=(\varepsilon_1^2+\varepsilon_2^2)/(4\beta)$, $L^D-L^S=(\varepsilon_1-\varepsilon_2)^2/(8\beta)\ge0$ and $G=(\alpha_1-\alpha_2)^2/(8\beta)$. If $\varepsilon_1,\varepsilon_2$ are i.i.d.\ with variance $\sigma_\alpha^2$ then $\E L^S=\sigma_\alpha^2/(4\beta)$ and $\E L^D=\sigma_\alpha^2/(2\beta)$: the dynamic rule loses twice as much revenue to estimation error.
+\end{corollary}
+
+\begin{corollary}[Welfare specialization]\label{cor:welf}
+For the welfare objective with $H=2$ and errors $\varepsilon_i$ in $\hat a_i$ the same conclusions hold with $\kappa:=bc^2/\big(4(1+bc)^2(1+2bc)\big)$ in place of $1/(8\beta)$: $L^S=\kappa(\varepsilon_1+\varepsilon_2)^2$, $L^D=2\kappa(\varepsilon_1^2+\varepsilon_2^2)$, $L^D-L^S=\kappa(\varepsilon_1-\varepsilon_2)^2$, $G=\kappa(a_1-a_2)^2$.
+\end{corollary}
+
+\begin{corollary}[When the simple toll wins]\label{cor:cross}
+The expected realized advantage of the dynamic plug-in over the static plug-in is $G-\lambda\E\sum_i(u_i-\bar u)^2$. For $H=2$,
+\[\text{dynamic wins in expectation}\iff\E\big[(u_1-u_2)^2\big]<\big(\tau^*_1(\theta)-\tau^*_2(\theta)\big)^2,\]
+i.e.\ exactly when the true optimal-toll differential exceeds the root-mean-square error of the estimated differential. For revenue with i.i.d.\ errors this reads $\sigma_\alpha^2<(\alpha_1-\alpha_2)^2/2$. No centering assumption on the errors is needed: bias and variance enter symmetrically through $\E[(u_1-u_2)^2]$.
+\end{corollary}
+
+\begin{remark}[Correlated errors, bias, heavy tails]\label{rem:corr}
+For centered errors the static advantage is $(\lambda/2)\Var(u_1-u_2)=\lambda\sigma_u^2(1-\varrho)$ when $\Var(u_i)=\sigma_u^2$ and $\mathrm{corr}(u_1,u_2)=\varrho$. Perfectly correlated (common-mode) errors give equality, not a dynamic advantage: $u_1=u_2$ a.s.\ implies $L^D=L^S$. Anti-correlated errors maximise the static advantage. A common-mode bias leaves $L^D-L^S$ unchanged, a differential bias $b_1-b_2$ adds $\lambda(b_1-b_2)^2/2$. The common-mode case is the realistic worry (a shared demand shock misread in both periods) and is the boundary at which the theorem stops helping the simple toll; it never reverses the inequality. Tail weight does not enter at the level of expectations, but heavy tails drive plug-in tolls into the corner regime where Lemma~\ref{lem:quad} fails (Section~\ref{sec:exp}, ablation A2).
+\end{remark}
+
+\begin{remark}[A caveat on the reach of the result]\label{rem:caveat}
+If the demand split is known from historical data and only the level is uncertain, the dynamic rule's estimation burden largely disappears and Corollary~\ref{cor:cross} favours it. The theorem compares policy classes given \emph{symmetric} uncertainty about the period demands. Section~\ref{sec:bayes} sharpens this: the correct reading is that naive flexibility is fragile, not that flexibility is.
+\end{remark}
+
+\subsection{Periods coupled by cross-period substitution}\label{sec:coupled}
+In the bottleneck model a toll in one period shifts departures to neighbouring periods. A minimal reduced form of this is a linear demand system with cross effects,
+\begin{equation}\label{eq:coupled}
+x=\alpha-B\tau,\qquad B=B^\top\succ0,
+\end{equation}
+e.g.\ $B=\beta I+\kappa\mathcal L$ with $\mathcal L$ the Laplacian of the path graph on periods, in which a higher toll in period $i$ moves users to periods $i\pm1$ (strength $\kappa$). Revenue is $R(\tau;\alpha)=\tau^\top(\alpha-B\tau)$.
+
+\begin{theorem}[Coupled periods]\label{thm:coupled}
+Under \eqref{eq:coupled} in the interior regime, let $\langle y,z\rangle_B=y^\top Bz$ and let $P$ be the $B$-orthogonal projector onto $\mathrm{span}(\one)$, $Py=\frac{\one^\top By}{\one^\top B\one}\one$. Then:
+\begin{enumerate}[label=(\alph*)]
+\item $\tau^D=\tfrac12B^{-1}\alpha$, $R^D=\tfrac14\alpha^\top B^{-1}\alpha$, and $R^D-R(\tau)=\|\tau-\tau^D\|_B^2$.
+\item The static optimum is $c^S=\one^\top\alpha/(2\,\one^\top B\one)$ with $R^S=(\one^\top\alpha)^2/(4\,\one^\top B\one)$, and $R^S-R(c\one)=(\one^\top B\one)(c-c^S)^2$.
+\item For plug-in tolls built from $\hat\alpha=\alpha+\varepsilon$, with $u:=\tfrac12B^{-1}\varepsilon$ the toll error,
+\[L^D=\|u\|_B^2=\tfrac14\varepsilon^\top B^{-1}\varepsilon,\qquad L^S=\|Pu\|_B^2=\frac{(\one^\top\varepsilon)^2}{4\,\one^\top B\one},\qquad L^D-L^S=\|(I-P)u\|_B^2\ge0,\]
+with equality iff $\varepsilon\propto B\one$.
+\item The realized advantage of the dynamic plug-in is $G-\|(I-P)u\|_B^2$ with $G=\|(I-P)\tau^D\|_B^2=R^D-R^S$. For $\E\varepsilon=0$, $\Cov\varepsilon=\Sigma$, the dynamic plug-in wins in expectation iff
+\[G>\tfrac14\Big[\tr(B^{-1}\Sigma)-\frac{\one^\top\Sigma\one}{\one^\top B\one}\Big].\]
+\end{enumerate}
+\end{theorem}
+For $B=\beta I$ this is Theorem~\ref{thm:est}. The ordering ``estimation error hurts the flexible toll at least as much'' therefore survives cross-period substitution exactly, in the $B$-metric. What it does \emph{not} do is settle the bottleneck model, where the demand map is not linear in the toll; Conjecture~\ref{conj:bottle} remains open.
+
+\section{Beyond plug-in: Bayes, shrinkage, and what simplicity is really robust to}\label{sec:bayes}
+The statement ``fewer estimated parameters beat more under noise'' is a bias--variance statement, and bias--variance statements are statements about an estimator class. Here the estimator is the unshrunk plug-in. Two results make the statement precise.
+
+\begin{theorem}[Certainty equivalence is Bayes-optimal; flexibility has non-negative value]\label{thm:bayes}
+Let the objective satisfy $\mathrm{Obj}(\tau;\theta)=\mathrm{Obj}^D(\theta)-\lambda\|\tau-\tau^*(\theta)\|^2$ with $\tau^*$ affine in $\theta$, and let $\pi$ be a posterior for $\theta$ with finite second moments, $\bar\theta=\E_\pi\theta$. For any linear toll class $\mathcal T\subseteq\R^H$ with Euclidean projector $\Pi_{\mathcal T}$:
+\begin{enumerate}[label=(\roman*)]
+\item the unique posterior-expected-objective maximiser in $\mathcal T$ is $\Pi_{\mathcal T}\,\tau^*(\bar\theta)$: plug in the posterior mean, then project (average, for the static class);
+\item its posterior expected loss against the dynamic oracle is $\lambda\big[\tr\Cov_\pi(\tau^*)+\|(I-\Pi_{\mathcal T})\tau^*(\bar\theta)\|^2\big]$;
+\item consequently the posterior value of flexibility is $V=\lambda\|(I-\Pi_{\rm static})\tau^*(\bar\theta)\|^2\ge0$, that is, under Bayes-optimal estimation the dynamic class weakly dominates the static class for every posterior.
+\end{enumerate}
+\end{theorem}
+
+Part (iii) does not contradict Theorem~\ref{thm:est}: there the dynamic planner uses the \emph{unshrunk} estimate $\tau^*(\hat\theta)$, whose differential $(I-P)\hat\tau$ is inflated by noise, while the Bayes-optimal dynamic planner uses the posterior mean, which shrinks the differential toward what the prior supports. Corollary~\ref{cor:cross} is therefore exactly a statement about naive flexibility.
+
+Exchangeable Gaussian priors make this quantitative. Suppose a planner observes toll-space estimates $\hat\tau_i=\tau^*_i+u_i$ with $u_i$ i.i.d.\ mean zero variance $s^2$ (this covers (O2) with $u_i=\varepsilon_i/(2\beta)$), and write $d_i=\tau^*_i-\bar\tau^*$, $D=\sum_id_i^2$. Consider the family
+\begin{equation}\label{eq:shrink}
+\hat\tau(w)=\bar{\hat\tau}\,\one+w\,(\hat\tau-\bar{\hat\tau}\one),\qquad w\in[0,1],
+\end{equation}
+which is static at $w=0$ and the dynamic plug-in at $w=1$.
+
+\begin{theorem}[Interpolating between static and dynamic]\label{thm:shrink}
+(a) The expected toll-space loss $\E\|\hat\tau(w)-\tau^*\|^2$ equals $s^2+w^2(H-1)s^2+(1-w)^2D$; multiplied by $\lambda$ it is the expected objective loss against the dynamic oracle.\\
+(b) It is minimised at $w^*=D/(D+(H-1)s^2)$ with value $s^2+\big[D^{-1}+((H-1)s^2)^{-1}\big]^{-1}$, which is strictly smaller than both $s^2+D$ (static) and $Hs^2$ (dynamic) whenever $D>0$ and $s^2>0$. The static plug-in beats the dynamic plug-in iff $D<(H-1)s^2$.\\
+(c) If $\tau^*_i$ are i.i.d.\ $N(\mu,v)$ a priori with flat prior on $\mu$ and $u_i\sim N(0,s^2)$, the posterior mean of $\tau^*$ is $\hat\tau(w_B)$ with $w_B=v/(v+s^2)$, which equals $w^*$ evaluated at $D=(H-1)v=\E D$.\\
+(d) If $u\sim N(0,s^2I)$ and $H\ge4$, the positive-part James--Stein weight $w_{JS}=\big(1-(H-3)s^2/\|\hat\tau-\bar{\hat\tau}\one\|^2\big)_+$ yields strictly smaller risk than the dynamic plug-in for every $\tau^*$ (Lindley~\cite{lindley1962}; James--Stein~\cite{jamesstein1961}).
+\end{theorem}
+Items (a)--(c) are proved in the appendix; (d) is the classical dominance result applied to the $(H-1)$-dimensional differential. The theorem completes the picture of Sections~\ref{sec:est}--\ref{sec:bayes}: the dynamic plug-in and the static toll are the endpoints of a one-parameter family whose interior is strictly better than both, and the data-driven weight needs only a noise-level estimate $s^2$.
+
+\begin{remark}[Plug-in versus Bayes at corners]\label{rem:corners}
+Theorem~\ref{thm:bayes} is an interior statement. When usage is clipped the revenue $\tau(\alpha-\beta\tau)_+$ is not concave in $\alpha$ and certainty equivalence is no longer Bayes-optimal. Experiment E9 computes the Bayes-optimal toll under a Gaussian posterior for $\alpha$: it coincides with the plug-in toll for small posterior standard deviation and \emph{exceeds} it as uncertainty grows, since the upside of a high toll is unbounded while the downside is capped at zero revenue. Hence, at corners, a robust planner does not shade tolls toward flatness.
+\end{remark}
+
+\section{Identifiability: flexibility has an information requirement}\label{sec:ident}
+The estimation results above take the error vector as given. Which errors are actually learnable depends on the observations, and here the policy classes diverge further.
+
+\begin{proposition}[The aggregate is identifiable without experimentation]\label{prop:ident-static}
+Under (O1), fix any static toll $\tau$ held constant across both periods. The observed total $Y_t=x_{1,t}+x_{2,t}+\xi_t=(S-2\beta\tau)+\xi_t$, with $S:=\alpha_1+\alpha_2$, is an unbiased measurement of $S$ up to a known offset. Hence the static-optimal toll $\tau^S=S/(4\beta)$ is estimable at rate $\sigma/\sqrt n$ from $n$ days of data under any single fixed toll. No toll variation is required.
+\end{proposition}
+
+\begin{proposition}[The split is not identifiable from interior aggregate flows]\label{prop:ident-split}
+Under (O1), fix two demand profiles and any toll sequence, static or time-varying, fixed or adaptive, under which every period stays active in both profiles. The observed total $Y_t=S-\beta(\tau_{1,t}+\tau_{2,t})+\xi_t$ depends on $(\alpha_1,\alpha_2)$ only through $S$. Hence two profiles with the same aggregate induce identical observation laws under every such policy, and the demand split, the dynamic-optimal tolls and the dynamic-optimal revenue are not identifiable from interior aggregate flow data by any experimentation. The static-optimal toll suffers no such obstruction.
+\end{proposition}
+
+\begin{example}\label{ex:ident}
+Let $\beta=1$, $\alpha=(10,6)$ and $\alpha'=(11,5)$. Both have aggregate $16$, hence the same static-optimal toll $4$ (interior in both), the same static-optimal revenue $32$, and identical distributions of total flow under every toll sequence keeping both periods active in both profiles (any $\tau_1<10$, $\tau_2<5$). Their dynamic-optimal tolls are $(5,3)$ and $(5.5,2.5)$ with dynamic-optimal revenues $34$ and $36.5$. From interior aggregate flows a planner can never learn whether the dynamic prize on offer is $2$ or $4.5$ above static.
+\end{example}
+
+\begin{remark}[Corner probes leak the split at a price]\label{rem:corner-probe}
+The interior restriction is essential. The corner probe $(\tau_1,\tau_2)=(5.5,5.5)$ yields expected totals $4.5+0.5=5$ under $\alpha$ and $5.5+0=5.5$ under $\alpha'$, separating the profiles. But the probe forgoes the priced-out period's usage: expected probe revenue is $27.5$ and $30.25$ against the static optimum $32$, costing $\EfiveProbeA$ and $\EfiveProbeB$ per probe day, the same order as the prize at stake. Learning the split through corners is an explicit exploration--revenue trade-off, not free identification. Simulation of this exact design is in Section~\ref{sec:exp} (E5).
+\end{remark}
+
+\begin{remark}[Per-period sensors restore identifiability]\label{rem:o2}
+Under (O2), $Y_{i,t}+\beta\tau_i$ is an unbiased measurement of $\alpha_i$ under any toll, so the split is directly estimable at rate $\sigma/\sqrt n$ and the asymmetry between the classes reduces to the statistical one of Theorem~\ref{thm:est}. The informational advantage of simplicity is largest exactly when measurements are coarsest, which is the common case: cities typically observe aggregate counts.
+\end{remark}
+
+\begin{proposition}[Unknown slope: two-level probing]\label{prop:slope}
+Under (O1) with $(S,\beta)$ both unknown, one fixed toll identifies only $S-2\beta\tau$. Alternate two levels $\bar\tau\pm\delta$ for $n$ days each and set $\hat\beta=(\bar Y_--\bar Y_+)/(4\delta)$, $\hat S=(\bar Y_-+\bar Y_+)/2+2\hat\beta\bar\tau$. Then $\hat\beta,\hat S$ are unbiased with
+\[\Var(\hat\beta)=\frac{\sigma^2}{8\delta^2n},\qquad\Var(\hat S)=\frac{\sigma^2(\delta^2+\bar\tau^2)}{2\delta^2n},\]
+and the plug-in static toll $\hat\tau=\hat S/(4\hat\beta)$ has, to first order,
+\[\Var(\hat\tau)\approx\frac{\sigma^2(4\beta^2\delta^2+\bar x^2)}{128\beta^4\delta^2n},\qquad\bar x:=S-2\beta\bar\tau.\]
+\end{proposition}
+The exploration cost of learning the slope grows like $(\bar x/\delta)^2$: small probes are expensive. Under constant-variance noise, centering probes at a higher operating toll (smaller $\bar x$) lowers variance; this is bounded by the corner, where usage vanishes and the slope signal disappears with it. A8 in Section~\ref{sec:exp} shows that the monotone dependence on $\bar\tau$ persists when noise is proportional to flow. Optimal probe design remains open: the loss of probing at $\bar\tau\pm\delta$ is $2\beta(\bar\tau\pm\delta-\tau^S)^2$ per day, and the centre $\bar\tau$ must itself be learned, so a regret theorem would need an adaptive design which we do not attempt.
+
+\section{Learning dynamics: how often should tolls be revised?}\label{sec:dyn}
+We now make demand dynamic. Because the static toll depends only on the aggregate (Proposition~\ref{prop:ident-static}), we track $S_t:=\alpha_{1,t}+\alpha_{2,t}$.
+
+\begin{assumption}[Demand dynamics and noise]\label{ass:rw}
+$S_{t+1}=S_t+\eta_t$ with $\eta_t$ i.i.d.\ mean $0$ variance $\nu^2$. Observations $Y_t=S_t-2\beta\tau_t+\xi_t$ with $\xi_t$ i.i.d.\ mean $0$ variance $\sigma^2$, independent of the $\eta$'s. The toll $\tau_t$ is known, so the planner can form $Y_t+2\beta\tau_t=S_t+\xi_t$.
+\end{assumption}
+
+\begin{definition}[$m$-scheduled cycle-mean policy]\label{def:sched}
+At the start of each cycle of $m$ days the planner averages the previous cycle's $m$ implied demands $\hat S=\frac1m\sum_s(Y_s+2\beta\tau_s)$ and sets the static toll $\tau=\hat S/(4\beta)$ for the whole cycle. $m=1$ is daily batching; $m\to\infty$ is estimate-once.
+\end{definition}
+
+\begin{theorem}[Optimal review period]\label{thm:review}
+Under Assumption~\ref{ass:rw} the $m$-scheduled policy's expected per-day revenue loss relative to the oracle static toll (which sees $S_t$ exactly) is
+\[\bar L(m)=\frac1{8\beta}\Big[\nu^2\frac{5m^2+1}{6m}+\frac{\sigma^2}m\Big],\qquad m=1,2,\dots,\]
+which is minimised over real $m$ at
+\[m^*=\sqrt{\frac{6\sigma^2+\nu^2}{5\nu^2}}\approx\frac\sigma\nu\sqrt{\frac65},\qquad\bar L(m^*)=\frac{\nu\sqrt{5(6\sigma^2+\nu^2)}}{24\beta}.\]
+\end{theorem}
+
+\begin{corollary}[Daily batching is rarely optimal]\label{cor:daily}
+In the relaxed problem $\bar L(m^*)\le\bar L(1)$ with equality iff $\sigma^2/\nu^2=2/3$. Over integers, $m=1$ is optimal iff $\bar L(2)\ge\bar L(1)$, i.e.\ $\sigma^2/\nu^2\le3/2$; for $\sigma^2/\nu^2>3/2$ the best integer period is at least $2$ and grows like $(\sigma/\nu)\sqrt{6/5}$. Re-estimating on every new observation injects more noise than the drift it removes. Conversely $\bar L(m)\to\infty$ as $m\to\infty$: under permanent drift, never revising is unboundedly worse than any finite schedule.
+\end{corollary}
+
+\begin{corollary}[Change costs lengthen the optimal period]\label{cor:cost}
+If each revision costs $C$ (operational, communication or traveler-inattention costs), the optimum of $\bar L(m)+C/m$ is $m^*=\sqrt{(6\sigma^2+\nu^2+48\beta C)/(5\nu^2)}$.
+\end{corollary}
+
+Theorem~\ref{thm:review} optimises over cycle-mean estimators. A planner who may revise daily using \emph{all} past observations does strictly better, and the following result settles, for the first time in this line of work, which architecture wins under explicit revision costs.
+
+\begin{theorem}[Filtering beats batching, with or without revision costs]\label{thm:kalman}
+Let $p=\tfrac12(\sqrt{\nu^4+4\nu^2\sigma^2}-\nu^2)$ be the steady-state posterior variance of the Kalman filter for $S_t$ (the positive root of $p^2+\nu^2p-\nu^2\sigma^2=0$). Consider the \emph{Kalman-scheduled} policy that runs the filter every day but revises the toll only every $m$ days, to the filter's current estimate. Its expected per-day loss against the oracle static toll is
+\[\bar L_K(m)=\frac1{8\beta}\Big[p+\frac{(m+1)\nu^2}2\Big],\qquad\text{plus }C/m\text{ with revision cost }C.\]
+(a) $\bar L_K(m)<\bar L(m)$ for every $m\ge1$ and every $\nu,\sigma>0$; hence for every revision cost $C\ge0$ the best Kalman-scheduled policy strictly beats the best cycle-mean policy.\\
+(b) Over real $m$ the optimal Kalman review period is $m_K^*=\max\{1,4\sqrt{\beta C}/\nu\}$ (for $C=0$ revise daily), independent of $\sigma$; observation noise affects only the level $p$, not the review frequency. The optimal value is $\frac{1}{8\beta}(p+\nu^2/2)+\nu\sqrt{C}/(2\sqrt\beta)$.\\
+(c) For $m=1$ the loss is $(p+\nu^2)/(8\beta)$.
+\end{theorem}
+
+\begin{proposition}[EWMA is Kalman in steady state]\label{prop:ewma}
+The estimator $\hat S_t=(1-g)\hat S_{t-1}+g(Y_t+2\beta\tau_t)$ used for next-day tolls has per-day loss $\frac1{8\beta}\big[V_g+\nu^2\big]$, $V_g=\frac{(1-g)^2\nu^2+g^2\sigma^2}{g(2-g)}$, minimised at the steady-state Kalman gain $g^*=(p+\nu^2)/(p+\nu^2+\sigma^2)$, where it equals $(p+\nu^2)/(8\beta)$. ($g=1$ recovers daily batching.)
+\end{proposition}
+
+\begin{proposition}[Deterministic drift: a cube-root law]\label{prop:drift}
+If instead $S_t=S_0+\delta t$ is deterministic and the planner is the $m$-scheduled cycle-mean policy with noise variance $\sigma^2$, then
+\[\bar L_{\rm drift}(m)=\frac1{8\beta}\Big[\delta^2\frac{13m^2-1}{12}+\frac{\sigma^2}m\Big],\qquad m^*=\Big(\frac{6\sigma^2}{13\delta^2}\Big)^{1/3},\quad\bar L_{\rm drift}(m^*)=\frac{\delta^2(39m^{*2}-1)}{96\beta}.\]
+The optimal period scales as $(\sigma/\delta)^{2/3}$ for deterministic drift but as $\sigma/\nu$ for random-walk drift. (A planner who knew the drift could extrapolate and remove the bias; the cycle-mean class cannot.)
+\end{proposition}
+
+\begin{proposition}[Recovery from a demand shift]\label{prop:recovery}
+Let $S$ jump by $\Delta$ on day $J$ and write $J=qm+j'$ with $j'\in\{0,\dots,m-1\}$ the offset of the jump within its cycle. The number of days from the jump until the scheduled policy's toll is based solely on post-jump data is $m$ if $j'=0$ and $2m-j'$ otherwise; for a uniformly random offset the mean is $(3m-1)/2$ (equal to $1$ for $m=1$). The estimate-once policy never recovers: absent further drift its post-jump per-day loss is $(\Delta^2+\E\zeta^2)/(8\beta)$ forever, where $\zeta$ is its initial estimation error (under continued drift it grows without bound).
+\end{proposition}
+Scheduled policies thus interpolate exactly between the extremes they connect: recovery speed $(3m-1)/2$ versus noise-averaging quality $\sigma^2/m$. Theorem~\ref{thm:review} and Proposition~\ref{prop:recovery} answer ``how much updating is enough?'' with a bias--variance--staleness trade-off in closed form, and ``when does faster updating pay?'' with a precise recovery-lag formula. A change-point detector can accelerate recovery without paying the noise cost of daily batching (A4 below).
+
+\section{Simulation validation (summary)}\label{sec:expsum}
+Every closed form above is paired with a CPU-only, seeded simulation; the full protocol, all tables, figures and ablations are in Appendix~\ref{sec:exp}, which follows the references. A prediction counts as \emph{verified} if it lies inside the simulated $95\%$ confidence interval or within $0.5\%$ of the simulated value; all other discrepancies are reported.
+\begin{itemize}
+\item \textbf{Verified:} the known-demand formula and bounds (exact enumeration; worst case $\EoneMinRho$ at $r=1+\sqrt2$; $0$ violations in $20{,}000$ random profiles), the estimation-loss identities for revenue and welfare, the coupled-period identity to $10^{-12}$, the shrinkage risks and James--Stein dominance for $H\ge4$, the review-period formula (29 of 30 cycle lengths in each of three settings, max error $0.74\%$), the Kalman-versus-batching comparison (e.g.\ $0.204$ versus $0.343$), the lag formula $(3m-1)/2$, and the identifiability results.
+\item \textbf{Not verified:} the true-revenue crossing at and above the critical error scale, Student-$t_3$ errors, $H=16$ in the number-of-periods ablation ($0.56\%$ off), and one cycle length per setting in E3 (each $<0.75\%$); all trace to clipping, heavy tails or Monte Carlo noise.
+\end{itemize}
+
+\begin{expsec}
+\section{Detailed experiments and ablations}\label{sec:exp}
+\paragraph{Protocol and reporting standard.} All experiments are CPU-only, numpy-based, seeded, and run in a few minutes in total on a laptop; code and raw results accompany the paper (\texttt{exp\_a.py}, \texttt{exp\_b.py}, \texttt{results.json}); every table below is generated from \texttt{results.json}. A closed-form prediction is \emph{verified} when it lies inside the simulated $95\%$ confidence interval or within $0.5\%$ of the simulated value (the latter absorbs startup transients and cycle discretisation that Monte Carlo noise eventually resolves); every larger discrepancy is reported and, where possible, explained. Losses are evaluated with the \emph{true}, clipped revenue (usage floored at zero) unless a table says it uses the exact quadratic loss of Lemma~\ref{lem:quad}. The planner's plug-in rules always use the interior formulas.
+
+\subsection{E1: known demand}
+\begin{figure}[t]\centering\includegraphics[width=.96\linewidth]{figs/e1.pdf}
+\caption{E1. Left: revenue ratio versus demand ratio, Theorem~\ref{thm:known} against exact candidate enumeration. Right: the power-law profile of Theorem~\ref{thm:generalH}(b).}\label{fig:e1}\end{figure}
+\begin{table}[t]\centering\small\input{tables/e1_main}\vspace{4pt}\input{tables/e1_ht}
+\caption{E1. Top: Theorem~\ref{thm:known} against exact enumeration over $6{,}000$ ratios in $[1,50]$ plus a refined grid around $1+\sqrt2$, and the bounds of Theorem~\ref{thm:generalH}(a) on random profiles. Bottom: the power-law profile of Theorem~\ref{thm:generalH}(b) ($\beta=1$); for $H\le4$ the bound $4/H_H$ exceeds one and is vacuous.}\label{tab:e1}\end{table}
+The enumeration reproduces the formula of Theorem~\ref{thm:known} to machine precision, with worst case $\EoneMinRho$ at $r=1+\sqrt2$. The bounds of Theorem~\ref{thm:generalH}(a) hold on all $20{,}000$ random profiles, and the power-law profile confirms that the ratio collapses logarithmically in $H$ (Table~\ref{tab:e1}).
+
+\subsection{E2: estimation-error losses and the crossing condition}
+Fixed demands $\alpha=(10,8)$, $\beta=1$, i.i.d.\ Gaussian errors, $2\times10^6$ draws per row.
+\begin{table}[t]\centering\small\input{tables/e2_iid}
+\caption{E2. Revenue arm, Corollary~\ref{cor:rev}. $L^D,L^S$ are losses against their own class oracle under true clipped revenue; ``verified'' applies the reporting standard to all three predictions jointly.}\label{tab:e2iid}\end{table}
+\begin{table}[t]\centering\small\input{tables/e2_welf}
+\caption{E2/A1. Welfare arm, Corollary~\ref{cor:welf}, $a=(10,8)$, $b=c=1$. The curvature $\lambda=0.375$ from Lemma~\ref{lem:quad}(b) is recovered numerically as $0.3750$ and $G=\kappa(a_1-a_2)^2=1/12$ is matched.}\label{tab:e2w}\end{table}
+Tables~\ref{tab:e2iid} and~\ref{tab:e2w} verify the closed forms for revenue and welfare: the dynamic plug-in loses twice the static plug-in's loss, and the difference matches $\sigma^2/(4\beta)$ resp.\ $\kappa(\varepsilon_1-\varepsilon_2)^2$ in expectation.
+\begin{figure}[t]\centering\includegraphics[width=.55\linewidth]{figs/e2.pdf}
+\caption{E2. Realized advantage of the dynamic over the static plug-in against error scale, $\alpha=(20,12)$, $\sigma_{\rm crit}=|\alpha_1-\alpha_2|/\sqrt2$ (Corollary~\ref{cor:cross}). The sign flips at $\sigma_{\rm crit}$ under the quadratic loss; under clipped revenue the curve departs from the prediction at and above the crossing.}\label{fig:e2}\end{figure}
+\begin{table}[t]\centering\small\input{tables/e2_cross}
+\caption{E2. Crossing locus. Prediction $G-\sigma_\alpha^2/(4\beta)$ with $G=8$, $\sigma_{\rm crit}=5.657$. The Lemma-1 column is verified in every row. Under clipped revenue the prediction is verified for $\sigma_\alpha<\sigma_{\rm crit}$ and fails at and above it, because errors of size comparable to $\alpha_2=12$ push plug-in tolls into the corner regime (ablation A6).}\label{tab:e2cross}\end{table}
+The crossing condition of Corollary~\ref{cor:cross} is confirmed exactly under the quadratic loss; the true-revenue crossing is shifted by corner effects of modest size (Table~\ref{tab:e2cross}), which is the limit of the interior theory.
+
+\subsection{E3: review period}
+Random-walk demand, batched cycle-mean policies $m=1,\dots,30$, $1{,}500$ paths of $3{,}000$ days per $m$. Loss is evaluated with the actual revenue function against the oracle static toll.
+\begin{figure}[t]\centering\includegraphics[width=\linewidth]{figs/e3.pdf}
+\caption{E3. Per-day loss against review period $m$ for three noise--drift settings: simulation (with $95\%$ CIs) against Theorem~\ref{thm:review}, and the Kalman loss $(p+\nu^2)/(8\beta)$ (dashed).}\label{fig:e3}\end{figure}
+\begin{table}[t]\centering\small\input{tables/e3_main}
+\caption{E3. ``$m$ verified'' counts the cycle lengths $m\in\{1,\dots,30\}$ at which Theorem~\ref{thm:review} is verified under the reporting standard; in each setting the single non-verified $m$ differs from the prediction by less than $0.75\%$ and is a Monte Carlo fluctuation of that size, not a systematic effect (the maximum relative error over all $m$ is in the last column).}\label{tab:e3}\end{table}
+\begin{table}[t]\centering\small\input{tables/e3_cor4}
+\caption{E3. Corollary~\ref{cor:daily}: daily batching is optimal over integers iff $\sigma^2/\nu^2\le3/2$ (exact evaluation of Theorem~\ref{thm:review}).}\label{tab:cor4}\end{table}
+Theorem~\ref{thm:review} is verified at $29$ of $30$ cycle lengths in each of the three settings, the integer optimum is predicted exactly, and Corollary~\ref{cor:daily} is consistent with exact evaluation (Table~\ref{tab:cor4}). With revision cost $C=0.2$ at $\nu=0.5,\sigma=3,\beta=1$ the cost-adjusted optimum is $m^*=7.15$ and the best integer period is $7$ (Corollary~\ref{cor:cost}).
+
+\paragraph{Filtering versus batching (Theorem~\ref{thm:kalman}).}
+\begin{table}[t]\centering\small\input{tables/e3_ksched}
+\caption{E3. $\nu=0.5$, $\sigma=3$, $\beta=1$ (no revision cost). Kalman-scheduled loss $[p+(m+1)\nu^2/2]/(8\beta)$ with $p=1.380$ against the cycle-mean loss of Theorem~\ref{thm:review}.}\label{tab:ksched}\end{table}
+\begin{table}[t]\centering\small\input{tables/e3_ewma}
+\caption{E3. EWMA with gain $g$ (Proposition~\ref{prop:ewma}), $\nu=0.5$, $\sigma=3$; the minimum is at $g^*=0.153$ with loss $0.2038$.}\label{tab:ewma}\end{table}
+Table~\ref{tab:ksched} confirms Theorem~\ref{thm:kalman}: the Kalman-scheduled loss matches its formula and is below the cycle-mean loss at every $m$. At $\nu=0.5$, $\sigma=3$ the batched optimum is $0.343$ and the Kalman filter achieves $0.204$, a $41\%$ reduction; even in the high-drift setting $\nu=\sigma=1$ where daily batching is optimal in its class ($0.2465$) the filter achieves $0.2023$. Table~\ref{tab:ewma} confirms the closed form for the EWMA family.
+
+\subsection{E4: recovery from a demand shift and CUSUM (A4)}
+\begin{table}[t]\centering\small\input{tables/e4_lag}
+\caption{E4. Days until the toll is based solely on post-jump data, enumerated over \emph{every} jump offset in a cycle, noise-free (Proposition~\ref{prop:recovery}).}\label{tab:lag}\end{table}
+The enumeration in Table~\ref{tab:lag} matches $(3m-1)/2$ exactly. The estimate-once policy ($25$ initial days, $\sigma=2$, $\Delta=3$) has post-jump per-day loss \EfourOnceSim{} against the prediction \EfourOncePred.
+\begin{table}[t]\centering\small\input{tables/e4_cusum}
+\caption{A4. Change-point detection. Per-day loss over $300$ post-jump days ($\sigma=1$, no drift), $6{,}000$ paths per row, CUSUM with allowance $k=0.5\sigma$ and threshold $h=8\sigma$; after an alarm the planner waits $5$ days and re-estimates from them. Detection delay is measured from the jump, among detected jumps.}\label{tab:cusum}\end{table}
+Table~\ref{tab:cusum} shows that adding a CUSUM detector to a long review period ($m=30$) reduces post-jump loss to about $1/1.9$ (approximately $0.52$ times the scheduled loss) for $\Delta=2\sigma$, and to about $1/2.8$ (approximately $0.35$ times the scheduled loss) for $\Delta=4\sigma$, at no cost in the stationary regime (no-jump loss $\EfourNJc$ against $\EfourNJs$). For $m=10$ and a small jump the detector brings no gain. The price is a false-alarm rate of about $\EfourFA$ over $300$ no-jump days for $m=30$; the threshold $h$ trades it off against delay. Detection therefore substitutes for scheduling when the jump is large relative to noise.
+
+\subsection{E5: identifiability}
+Example~\ref{ex:ident} is simulated directly. Under an \emph{adaptive} interior toll rule (tolls feed back on past observations, clipped to keep both periods active in both profiles) the observation process is indistinguishable: over $30$ days and $4\times10^4$ paths, the smallest two-sample Kolmogorov--Smirnov $p$-value across days is $\EfiveIntKS$ (consistent with the minimum of $30$ draws under the null) and the pooled mean gap is $0.0015$ for noise standard deviation $1$. At the corner probe $(5.5,5.5)$ the profiles separate; the accuracy of the optimal test against probe days matches $\Phi(\Delta\mu\sqrt n/2\sigma)$ (Table~\ref{tab:corner}) while each probe day forgoes $4.5$ or $1.75$ revenue (Remark~\ref{rem:corner-probe}). With per-period sensors (O2) the split is recovered at standard error $\EfiveSE$ after $25$ days against the predicted $0.2$.
+\begin{table}[t]\centering\small\input{tables/e5_corner}
+\caption{E5. Accuracy of the likelihood-ratio test between $\alpha=(10,6)$ and $\alpha'=(11,5)$ from $n$ days of corner probes, $\sigma=1$ ($10^5$ replications).}\label{tab:corner}\end{table}
+
+\subsection{Ablations}
+\paragraph{A2: error structure.} Table~\ref{tab:a2} varies correlation, tail weight and bias. Correlation and bias predictions of Remark~\ref{rem:corr} are verified in all nine rows. The Student-$t_3$ arm is the exception: the simulated difference $0.2388\pm0.0094$ lies $4.5\%$ below the prediction $0.25$. This is not a failure of Theorem~\ref{thm:est}, whose expectation requires only finite variance; it reflects clipping, since heavy-tailed errors of this scale occasionally exceed $\alpha_2=8$ and push tolls into the corner regime. We report it as an unverified arm.
+\begin{table}[t]\centering\small\input{tables/a2}
+\caption{A2. Ablation over error structure, $\alpha=(10,8)$, $\sigma_\alpha=1$, $10^6$ draws.}\label{tab:a2}\end{table}
+\paragraph{A6: corners.} Table~\ref{tab:a6} shows what happens when errors become large relative to demand ($\alpha=(6,3)$). The interior theory is accurate to $0.4\%$ at $\sigma_\alpha=0.5$ and drifts by $2.7\%$ at $\sigma_\alpha=1$; the sign of the deviation changes between $\sigma_\alpha=2$ and $3$, and at $\sigma_\alpha=4$ the true difference is $13\%$ below the quadratic prediction. The qualitative ordering $L^D\ge L^S$ is preserved throughout in expectation.
+\begin{table}[t]\centering\small\input{tables/a6}
+\caption{A6. $E[L^D-L^S]$ under clipped true revenue against the Lemma-1 prediction $\sigma_\alpha^2/(4\beta)$, $\alpha=(6,3)$.}\label{tab:a6}\end{table}
+\paragraph{A7: number of periods.} Table~\ref{tab:a7} varies $H$ with demand profile $\alpha_i=\mathrm{linspace}(14,10,H)$ and i.i.d.\ errors. The dynamic plug-in loses $H\sigma^2/(4\beta)$ and the static one $\sigma^2/(4\beta)$, so the static advantage grows with $H$ and the crossing threshold is $(H-1)\sigma^2/(4\beta)$ (Theorem~\ref{thm:shrink}(b)). Three of four rows are verified; at $H=16$ the static loss is $0.2486$ against $0.25$ ($0.56\%$), just outside the $0.5\%$ tolerance, and is reported as unverified.
+\begin{table}[t]\centering\small\input{tables/a7}
+\caption{A7. Number of periods, $\sigma=1$, $\beta=1$. ``dynamic wins'' is $G$ against the threshold.}\label{tab:a7}\end{table}
+
+\paragraph{A3: demand dynamics.} Table~\ref{tab:a3} compares dynamics for $\nu=0.5$, $\sigma=3$. Mean reversion strongly lengthens the best review period: for $\phi=0.8$ the best period is the largest in our grid ($60$), because with a stationary mean longer averaging only helps. For deterministic drift the cube-root law of Proposition~\ref{prop:drift} predicts the integer optimum exactly. With weekly seasonality, calendar-aligned weekday means (four weeks) reach the noise floor $\sigma^2/(4\cdot8\beta)=0.125$, far below any cycle-mean policy: the best cycle policy ($m=14$) loses $0.598$.
+\begin{table}[t]\centering\small
+\begin{minipage}[t]{.48\linewidth}\centering\input{tables/a3_ar1}\end{minipage}\hfill
+\begin{minipage}[t]{.48\linewidth}\centering\input{tables/a3_seas}\end{minipage}\vspace{6pt}
+\input{tables/a3_drift}
+\caption{A3. Left: AR(1) demand. Right: weekly seasonality ($A=3$, $\sigma=2$). Bottom: deterministic drift ($\sigma=2$), Proposition~\ref{prop:drift}.}\label{tab:a3}\end{table}
+
+\paragraph{A5/A8: unknown slope and heteroskedastic noise.} Table~\ref{tab:a5} verifies the exact variances of Proposition~\ref{prop:slope} for $\hat\beta$ and $\hat S$ and shows that the first-order variance of $\hat\tau$ is accurate to about $2\%$ at $\delta=2$ but underestimates by up to $26\%$ at $\delta=0.5$ (second-order terms), the $1/\delta^2$ cost the proposition describes. With noise proportional to flow ($\kappa=0.1$) Table~\ref{tab:a8} shows that $\Var(\hat\tau)$ still falls steeply with the centre $\bar\tau$, so the conclusion that higher-centered probes are cheaper does \emph{not} flip in the range tested.
+\begin{table}[t]\centering\small\input{tables/a5}
+\caption{A5. Two-level probing, $S=16$, $\sigma=1$, $n=20$, $4\times10^5$ replications. The first-order formula for $\Var(\hat\tau)$ is a delta-method approximation.}\label{tab:a5}\end{table}
+\begin{table}[t]\centering\small\input{tables/a8}
+\caption{A8. Noise standard deviation $\kappa\times$flow ($\kappa=0.1$), $\delta=1$, $n=20$. The delta method with heteroskedastic covariance tracks simulation; the constant-noise formula does not.}\label{tab:a8}\end{table}
+
+\subsection{E7: shrinkage between static and dynamic}
+\begin{figure}[t]\centering\includegraphics[width=.6\linewidth]{figs/e7.pdf}
+\caption{E7. Toll-space risk against heterogeneity $D$ for the static, dynamic and James--Stein estimators, $H=4,8$, $s=1$.}\label{fig:e7}\end{figure}
+\begin{table}[t]\centering\small\input{tables/e7}
+\caption{E7. Toll-space risk $\E\|\hat\tau(w)-\tau^*\|^2$, $s=1$, $4\times10^5$ draws. ``plug-in PP'' uses $w=(1-(H-1)s^2/\|\hat\tau-\bar{\hat\tau}\|^2)_+$; James--Stein uses $(H-3)$ and is defined for $H\ge4$. The closed forms of Theorem~\ref{thm:shrink}(a),(b) are matched to Monte Carlo error.}\label{tab:e7}\end{table}
+The oracle-weight risk matches Theorem~\ref{thm:shrink}(b) in every cell, and the James--Stein weight beats the dynamic plug-in in every cell with $H\ge4$ (Table~\ref{tab:e7}), as the theory predicts. For $H=2$ the plug-in positive-part rule beats the dynamic plug-in when heterogeneity is small ($D\le0.5$) but \emph{not} when it is moderate ($D\in\{2,8\}$), where it is up to $22\%$ worse: dominance needs $H\ge4$, and we do not claim it for $H=2$.
+
+\subsection{E8: coupled periods}
+Theorem~\ref{thm:coupled} is tested directly with $H=6$ periods, $B=\beta I+\kappa\mathcal L$ with $\kappa\in\{0,0.5,2,8\}$, $\beta=1$, correlated Gaussian errors with random covariance, $10^5$ draws per row; $L^D$ and $L^S$ are computed from the revenue function directly, not from the closed forms.
+\begin{table}[t]\centering\small\input{tables/e8}
+\caption{E8. Theorem~\ref{thm:coupled}: the maximal deviation of directly computed losses from the closed forms is at the level of floating-point error ($<2\times10^{-12}$); $L^D-L^S$ is never negative; on the direction $\varepsilon\propto B\one$ the gap vanishes (to $10^{-13}$).}\label{tab:e8}\end{table}
+Table~\ref{tab:e8} confirms Theorem~\ref{thm:coupled} as an identity and not merely in expectation, for substitution strengths covering a condition number from $1$ to $31$.
+
+\subsection{E9: certainty equivalence at the corner}
+\begin{table}[t]\centering\small\input{tables/e9}
+\caption{E9. Bayes-optimal versus plug-in single-period toll under posterior $\alpha\sim N(\mu,s^2)$, $\mu=10$, $\beta=1$, true clipped revenue. Rows with $s/\mu>0.6$ are omitted because the Gaussian posterior then places non-negligible mass on negative demand.}\label{tab:e9}\end{table}
+Table~\ref{tab:e9} illustrates Remark~\ref{rem:corners}: the Bayes toll equals the plug-in toll in the interior regime and exceeds it as posterior uncertainty grows, with gains of order $4\%$ of revenue at $s/\mu=0.6$.
+
+\subsection{Scorecard}
+Of the closed forms tested, Theorems~\ref{thm:known}, \ref{thm:generalH}, \ref{thm:est}--\ref{thm:shrink}(a,b), \ref{thm:review}, \ref{thm:kalman} and Propositions~\ref{prop:ident-static}--\ref{prop:recovery} are verified under the reporting standard in the interior regime. The tested arms that are \emph{not} verified are: the true-revenue crossing at and above $\sigma_{\rm crit}$ (three rows), Student-$t_3$ errors, $H=16$ in A7, and a single cycle length per setting in E3 (within $0.75\%$); all trace to clipping, heavy tails or Monte Carlo fluctuation of sub-percent size. The first-order $\Var(\hat\tau)$ of Proposition~\ref{prop:slope} is an approximation by construction and is reported as such. The Bayes-at-corners claim is exploratory (a numerical illustration, not a theorem).
+
+\end{expsec}
+
+\section{Related work}\label{sec:related}
+\paragraph{Simple versus optimal congestion pricing.} The starting point is Jalota, Di and Elmachtoub~\cite{jde2026}, whose known-demand guarantees (static tolls achieve a constant fraction of dynamic optimal revenue and at most twice the minimum system cost in bottleneck and MFD models) our Theorems~\ref{thm:known} and~\ref{thm:generalH} parallel in a reduced model; we add the demand-learning dimension they do not treat. Vickrey's bottleneck model~\cite{vickrey1969} is the canonical departure-time framework our Conjecture~\ref{conj:bottle} targets, and Pigou's marginal-cost tolls~\cite{pigou1920} are the welfare benchmark of Lemma~\ref{lem:quad}(b).
+\paragraph{Learning tolls and prices.} Jalota, Gopalakrishnan, Azizan, Johari and Pavone~\cite{jalota2023routing} learn tolls from observed aggregate flows with $O(\sqrt T)$ regret against a complete-information oracle, and Chiu and Sastry~\cite{chiu2024} learn latency and choice parameters while tolling, also with $\tilde O(\sqrt T)$ regret. These works learn toward the optimal toll; none compares simple and flexible policy classes under estimation error (our Theorems~\ref{thm:est}--\ref{thm:shrink}) or characterises update frequency (our Theorems~\ref{thm:review}--\ref{thm:kalman}). Jalota, Sun and Azizan~\cite{jalota2023eq} study learning prices with unknown supplier costs in markets without congestion feedback.
+\paragraph{Dynamic pricing with demand learning.} The revenue-management literature (survey: den Boer~\cite{denboer2015}) studies pricing while learning demand. Besbes and Zeevi~\cite{besbes2015} show that linear models suffice for near-optimal pricing, which supports our linear-demand assumption. Keskin and Zeevi~\cite{keskin2017} design near-optimal policies for a product whose demand changes under a variation budget; our random walk is a smoothly changing special case and Theorem~\ref{thm:review} is a scheduled-estimation counterpart with the toll-specific coupling that observations are shaped by the price itself. Static-versus-dynamic comparisons also appear in Fisher markets~\cite{jalotaye2024}, and static-pricing guarantees for reusable resources and queues~\cite{besbes2024static,bergquist2023} bound the static/dynamic gap under \emph{known} stochastic demand, a different source of gap from the estimation error studied here. Time-varying tolls with elastic demand in the bottleneck model are analysed by Verhoef~\cite{verhoef1997}; we do not claim our identifiability statements (Section~\ref{sec:ident}), which concern demand levels in a reduced model, extend or contradict that analysis.
+\paragraph{Statistical tools.} Theorem~\ref{thm:shrink} uses the James--Stein phenomenon~\cite{jamesstein1961,lindley1962} and its empirical-Bayes interpretation~\cite{efronmorris1973}; Theorem~\ref{thm:kalman} uses the Kalman filter~\cite{kalman1960} and the classical fact that exponential smoothing is optimal for a random walk observed with noise~\cite{muth1960}; the change-point arm uses Page's CUSUM~\cite{page1954}. We have not found the specific static-versus-dynamic toll comparison under estimation error, the crossing condition of Corollary~\ref{cor:cross}, the review-period formulas, or the Kalman-with-revision-costs comparison in the literature.
+
+\section{Scope, limitations and open problems}\label{sec:open}
+\begin{enumerate}[label=\textbf{L\arabic*.}]
+\item \textbf{Reduced form.} The base model replaces departure-time choice with a static within-period externality. Section~\ref{sec:coupled} adds linear cross-period substitution; nothing here is a statement about the bottleneck model until Conjecture~\ref{conj:bottle} is proved.
+\item \textbf{Interior regime.} Theorems~\ref{thm:est}, \ref{thm:coupled}, \ref{thm:bayes} assume non-binding non-negativity. Large errors drive plug-in tolls to corners (A6, E9); a corner-aware Bayes theory is open.
+\item \textbf{Known slope.} $\beta$ is known except in Proposition~\ref{prop:slope}. Optimal probe design and a regret theorem for the dynamic objective are open.
+\item \textbf{First models.} Random walk demand, i.i.d.\ noise and Gaussian-prior shrinkage are first models; A3 shows how conclusions move under mean reversion, drift and seasonality, but no closed form is given for mean reversion.
+\item \textbf{Objectives.} Revenue and welfare share the same algebra; equity, transit-agency revenue allocation and political constraints are not modeled.
+\end{enumerate}
+\begin{conjecture}[Bottleneck extension]\label{conj:bottle}
+In Vickrey's bottleneck model with a public-transit outside option, the oracle static and dynamic revenue-optimal tolls are locally well approximated as linear in the demand scale, and the robustness ordering of Theorem~\ref{thm:est} persists: demand-estimation error degrades the optimal time-varying toll at least as much as the optimal static toll, with the crossing governed by the error in the estimated toll differential. Supporting structure: the static toll also depends on demand through a one-dimensional aggregate, while the dynamic toll depends on the demand profile. Theorem~\ref{thm:coupled} proves the analogue under linear cross-period substitution. Unproved in the bottleneck model.
+\end{conjecture}
+\begin{conjecture}[MFD extension]\label{conj:mfd}
+The analogous ordering holds in the city-scale MFD model of~\cite{jde2026} under learned demand, with weaker constants, mirroring their known-demand finding that MFD guarantees are weaker than bottleneck guarantees. Unproved and untested.
+\end{conjecture}
+
+\section{Practical summary}\label{sec:practice}
+\begin{itemize}
+\item \emph{Only aggregate counts are available?} Use a static toll; the dynamic-optimal toll is not identifiable from interior aggregate flows (Proposition~\ref{prop:ident-split}).
+\item \emph{Period-resolved sensing is available?} Estimate the toll differential with shrinkage (Theorem~\ref{thm:shrink}): the weight $w^*=D/(D+(H-1)s^2)$ interpolates, and the naive dynamic plug-in is dominated for $H\ge4$ (James--Stein).
+\item \emph{Review frequency?} Random-walk drift gives $m^*\approx(\sigma/\nu)\sqrt{6/5}$; deterministic drift gives $m^*=(6\sigma^2/(13\delta^2))^{1/3}$. Revision costs add $48\beta C$ under the square root.
+\item \emph{Can the planner filter?} A Kalman/EWMA estimate attains $m_K^*=4\sqrt{\beta C}/\nu$, with review frequency set by revision cost (Theorem~\ref{thm:kalman}).
+\item \emph{Long review period but occasional shocks?} Add a change-point detector (A4).
+\end{itemize}
+
+\section*{Acknowledgments}
+This paper builds on the framework of Jalota, Di and Elmachtoub~\cite{jde2026}. The author is not affiliated with those authors, and any errors are the author's alone. The views expressed are the author's and do not necessarily reflect those of Microsoft.
+% ACK-PLACEHOLDER: add names of colleagues who have agreed to be acknowledged.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+\bibitem{jde2026} D.~Jalota, S.~Di, A.~N.~Elmachtoub. \emph{Simple vs.\ Optimal Congestion Pricing}. arXiv:2602.21495, 2026.
+\bibitem{vickrey1969} W.~S.~Vickrey. Congestion theory and transport investment. \emph{American Economic Review} 59(2):251--260, 1969.
+\bibitem{pigou1920} A.~C.~Pigou. \emph{The Economics of Welfare}. Macmillan, 1920.
+\bibitem{jalota2023routing} D.~Jalota, K.~Gopalakrishnan, N.~Azizan, R.~Johari, M.~Pavone. Online learning for traffic routing under unknown preferences. \emph{AISTATS}, PMLR vol.~206, pp.~3210--3229, 2023.
+\bibitem{chiu2024} C.-Y.~Chiu, S.~Sastry. Parameter estimation in optimal tolling for traffic networks under the Markovian traffic equilibrium. \emph{American Control Conference}, 2024; arXiv:2409.19765.
+\bibitem{jalota2023eq} D.~Jalota, H.~Sun, N.~Azizan. Online learning for equilibrium pricing in markets under incomplete information. arXiv:2303.11522, 2023.
+\bibitem{jalotaye2024} D.~Jalota, Y.~Ye. Stochastic online Fisher markets: static pricing limits and adaptive enhancements. \emph{Operations Research} 73(2):798--818, 2025; arXiv:2205.00825.
+\bibitem{denboer2015} A.~V.~den Boer. Dynamic pricing and learning: historical origins, current research, and new directions. \emph{Surveys in Operations Research and Management Science} 20(1):1--18, 2015.
+\bibitem{besbes2015} O.~Besbes, A.~Zeevi. On the (surprising) sufficiency of linear models for dynamic pricing with demand learning. \emph{Management Science} 61(4):723--739, 2015.
+\bibitem{keskin2017} N.~B.~Keskin, A.~Zeevi. Chasing demand: learning and earning in a changing environment. \emph{Mathematics of Operations Research} 42(2):277--307, 2017.
+\bibitem{jamesstein1961} W.~James, C.~Stein. Estimation with quadratic loss. In \emph{Proc.\ Fourth Berkeley Symposium on Mathematical Statistics and Probability}, vol.~1, pp.~361--379, 1961.
+\bibitem{lindley1962} D.~V.~Lindley. Discussion on Professor Stein's paper. \emph{J.\ Roy.\ Statist.\ Soc.\ Ser.~B} 24(2):285--287, 1962.
+\bibitem{efronmorris1973} B.~Efron, C.~Morris. Stein's estimation rule and its competitors---an empirical Bayes approach. \emph{J.\ Amer.\ Statist.\ Assoc.} 68(341):117--130, 1973.
+\bibitem{besbes2024static} O.~Besbes, A.~N.~Elmachtoub, Y.~Sun. Static pricing: universal guarantees for reusable resources. arXiv:1905.00731.
+\bibitem{bergquist2023} B.~Bergquist, A.~N.~Elmachtoub. Static pricing guarantees for queueing systems. arXiv:2305.09168, 2023.
+\bibitem{verhoef1997} E.~T.~Verhoef. Time-varying tolls in a dynamic model of road traffic congestion with elastic demand. Tinbergen Institute discussion paper TI 97-028, 1997.
+\bibitem{kalman1960} R.~E.~Kalman. A new approach to linear filtering and prediction problems. \emph{J.\ Basic Engineering} 82(1):35--45, 1960.
+\bibitem{muth1960} J.~F.~Muth. Optimal properties of exponentially weighted forecasts. \emph{J.\ Amer.\ Statist.\ Assoc.} 55(290):299--306, 1960.
+\bibitem{page1954} E.~S.~Page. Continuous inspection schemes. \emph{Biometrika} 41(1/2):100--115, 1954.
+\end{thebibliography}
+
+\appendix
+\input{appendix}
+\expbody
+\end{document}
