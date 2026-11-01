@@ -1,6 +1,6 @@
 # Estimation Robustness of Static Congestion Pricing under Learned Demand
 
-This repository contains the paper, its synthetic simulation code, and the generated tables and figures.
+This repository contains the synthetic simulation code, experiment outputs, and generated tables and figures for the research project.
 
 ## Reproducing the results
 
@@ -13,21 +13,14 @@ python exp_b.py
 python make_tables.py
 ```
 
-The experiment scripts use fixed random seeds and write their outputs to `results.json`, `figs/`, and `tables/`. To compile the manuscript, install [Tectonic](https://tectonic-typesetting.github.io/) and run:
-
-```powershell
-tectonic paper.tex
-```
-
-`paper.pdf` is the compiled manuscript included with this release. The experiments in this repository are synthetic; no external traffic datasets are bundled.
+The experiment scripts use fixed random seeds and write their outputs to `results.json`, `figs/`, and `tables/`. The experiments in this repository are synthetic; no external traffic datasets are bundled.
 
 ## Contents
 
-- `paper.tex`, `appendix.tex`, and `paper.pdf`: manuscript source and compiled paper
 - `exp_a.py`, `exp_b.py`, `common.py`: simulation code
 - `make_tables.py`: table generation from `results.json`
 - `results.json`: recorded synthetic experiment outputs
-- `figs/`, `tables/`: generated manuscript figures and tables
+- `figs/`, `tables/`: generated experiment figures and tables
 
 ## Author
 
