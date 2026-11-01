@@ -1,6 +1,8 @@
 # Estimation Robustness of Static Congestion Pricing under Learned Demand
 
-This repository contains the synthetic simulation code, experiment outputs, and generated tables and figures for the research project.
+Synthetic simulation study of how demand-estimation error affects static congestion pricing. The repository contains the experiment code, recorded outputs, generated tables, and figures. It does not include an external traffic dataset, and its results should not be read as a policy evaluation of a real road network.
+
+The manuscript source is maintained separately and is not included in this code repository.
 
 ## Reproducing the results
 
@@ -24,6 +26,4 @@ The experiment scripts use fixed random seeds and write their outputs to `result
 
 ## Author
 
-Shereen Anand<br>
-Independent Researcher<br>
-pes1202201328@pesu.pes.edu
+Shereen Anand, independent researcher — pes1202201328@pesu.pes.edu
